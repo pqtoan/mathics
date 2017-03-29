@@ -16,9 +16,11 @@ from itertools import combinations
 import mpmath
 from mathics.builtin.base import Builtin, Test
 from mathics.core.expression import (
-    Expression, Integer, Rational, Symbol, from_python)
+    Expression, Integer, Rational, Symbol, from_python, String)
 from mathics.builtin.numeric import N
 
+import itertools
+from mathics.core.convert import from_sympy
 
 class PowerMod(Builtin):
     """
@@ -517,6 +519,87 @@ class CubeRoot(Builtin):
     rules = {
         'CubeRoot[n_]': 'If[NumericQ[n] == True, If[n > 0, Power[n, Divide[1, 3]], Times[-1, Power[Times[-1, n], Divide[1, 3]]], Power[n, Divide[1, 3]]], Power[n, Divide[1, 3]]]',
     }
+
+class Subsets(Builtin):
+    """
+    <dl>
+    <dt>'Subsets[$list$]'
+        <dd>finds a list of all posible subsets of $list$.
+        
+    <dt>'Subsets[$list$, $n$]'
+        <dd>finds a list of all posible subsets containing at most $n$ elements.
+        
+    <dt>'Subsets[$list$, {$n$}]'
+        <dd>finds a list of all posible subsets containing exactly $n$ elements.
+        
+    <dt>'Subsets[$list$, {$min$, $max$}]'
+        <dd>finds a list of all posible subsets containing between $min$ and $max$ elements.
+        
+    <dt>'Subsets[$list$, $spec$, $n$]'
+        <dd>finds a list of the first %n% posible subsets.
+        
+    <dt>'Subsets[$list$, $spec$, {$n$}]'
+        <dd>finds the %n%th posible subset.
+    </dl>
+    >> Subsets[{a, b, c}]
+     = {{}, {a}, {b}, {c}, {a, b}, {a, c}, {b, c}, {a, b, c}}
+     
+    >> Subsets[{a, b, c, d}, 2]
+     = {{}, {a}, {b}, {c}, {d}, {a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}}
+     
+    >> Subsets[{a, b, c, d}, {2}]
+     = {{a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}}
+     
+    #> Subsets[{a, b, c, d, e}, {3}, 5]
+     = {{a, b, c}, {a, b, d}, {a, b, e}, {a, c, d}, {a, c, e}}
+    
+    #> Subsets[{a, b, c, d, e}, {0, 5, 2}]
+     = {{}, {a, b}, {a, c}, {a, d}, {a, e}, {b, c}, {b, d}, {b, e}, {c, d}, {c, e}, {d, e}, 
+        {a, b, c, d}, {a, b, c, e}, {a, b, d, e}, {a, c, d, e}, {b, c, d, e}}
+        
+    #> Subsets[Range[20], All, {69381}]
+     = {{1, 3, 4, 5, 11, 14, 17}}
+     
+    #> Subsets[{a, b, c, d}, All, {15, 1, -2}]
+     = {{b, c, d}, {a, b, d}, {c, d}, {b, c}, {a, c}, {d}, {b}, {}}
+    
+    #> Subsets[{}]
+     = {{}}
+     
+    #> Subsets[]
+     = Subsets[]
+     
+    #> Subsets[{a, b, c}, 2.5}
+     = Error Message
+     
+    #> Subsets[{a, b, c}, -1}
+     = Error Message
+    """
+
+    rules = {
+        
+        }
+    messages = {
+        'normal': 'Nonatomic expression expected at position 1 in `1`. ',
+    }
+
+    def apply(self, list, n, evaluation):
+        'Subsets[list_?ListQ , n___]'
+        tlist = [x for x in list.leaves]
+        n_len = len(n.get_sequence())
+        expr = Expression('Subsets', list) if n_len == 0 else Expression('Subsets', list, n)
+        print("expr = ", expr)
+        result = Expression('List')
+        tlen = len(tlist) if n_len == 0 else int(n.to_python())
+        print("tlen = ", tlen , "type = ", type(tlen), "len(list) = ", type(len(tlist)))
+        for i in range(0, tlen + 1):
+            #for x in itertools.combinations(n_python):
+            # *[x for c in itertools.combinations(n_python, i) for x in c]
+            #for c in itertools.combinations(n_python, i):
+            for c in itertools.combinations(tlist, i):
+                nested_list = Expression('List', *[x for x in c])
+                result.leaves.append(nested_list)
+        return result
                                       
 class Prime(Builtin):
     """
