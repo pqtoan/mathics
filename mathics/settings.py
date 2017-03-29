@@ -137,3 +137,5 @@ INSTALLED_APPS = (
     'django.contrib.sites',
     'mathics.web',
 )
+
+ALLOWED_HOSTS = ['localhost', '172.16.9.245']

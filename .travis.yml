@@ -89,4 +89,4 @@ script:
     fi
 notifications:
     email: false
-    slack: mathics:VIjdkcZPlA79sOtVOtyjdOcT
+#    slack: mathics:VIjdkcZPlA79sOtVOtyjdOcT
