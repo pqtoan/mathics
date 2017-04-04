@@ -17,7 +17,7 @@ from itertools import combinations
 from mathics.builtin.base import Builtin, Test
 from mathics.core.expression import (
     Expression, Integer, Rational, Symbol, from_python)
-
+import mpmath
 
 class PowerMod(Builtin):
     """
@@ -321,6 +321,105 @@ class IntegerExponent(Builtin):
             result += 1
 
         return from_python(result - 1)
+
+class RealDigits(Builtin):
+    """
+    <dl>
+    <dt>'RealDigits[$n$]'
+        <dd>finds a list of the digits in the approximate real number $n$, together with the number of digits that are to the left of the decimal point.
+    
+    <dt>'RealDigits[$n$, $b$]'
+        <dd>finds a list of base‐$b$ digits in $n$.
+    
+    <dt>'RealDigits[$n$, $b$, $len$]'
+        <dd>finds a list of $len$ digits.
+    
+    <dt>'RealDigits[$n$, $b$, $len$, $p$]'
+        <dd>finds $len$ digits starting with the coefficient of $b$$p$
+    </dl>
+
+    >> RealDigits[123.55555]
+     = {{1, 2, 3, 5, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0}, 3}
+
+    >> RealDigits[0.000012355555]
+     = {{1, 2, 3, 5, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0}, -4}
+
+    #> RealDigits[Pi, 10, 25]
+     = {{3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3}, 1}
+    
+    #> RealDigits[19/7, 10, 25]
+     = {{2, 7, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5}, 1} 
+     
+    #> RealDigits[19/7]
+     = {{2, {7, 1, 4, 2, 8, 5}}, 1}
+     
+    #> RealDigits[1.234, 2, 15]
+     = {{1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1}, 1}
+     
+    #> RealDigits[Pi, 10, 20, -5]
+     = {{9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3}, -4}
+     
+    #> RealDigits[Pi, 10, 20, 5]
+     = {{0, 0, 0, 0, 0, 3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9}, 6}
+     
+    #> RealDigits[Pi, GoldenRatio, 20]
+     = {{1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0}, 3}
+     
+    #> RealDigits[Pi, 10, 1, -10000]
+     = {{8}, -9999}
+     
+    #> RealDigits[Pi]
+     : The number of digits to return cannot be determined.
+     = RealDigits[Pi]
+     
+    #> RealDigits[3 + 4 I]
+     : The value 3 + 4 I is not a real number.
+     = RealDigits[3 + 4 I]
+    """
+
+    rules = {
+        'RealDigits[n_]' : 'RealDigits[n, 10]',
+    }
+
+    messages = {
+        'realx': 'The value `1` is not a real number.',
+        'ndig': 'The number of digits to return cannot be determined.',
+    }
+
+    def apply(self, n, b, evaluation):
+        'RealDigits[n_, b_]'
+
+        py_n, py_b = n.to_python(), b.to_python()
+        print("n = ", n, "py_n = ", py_n)
+        expr = Expression('RealDigits', n)
+
+        if isinstance(py_n, complex):
+            return evaluation.message('RealDigits', 'realx', expr)
+        
+        len1 = int(round(Expression('N', Expression('Divide', Expression('Precision', py_n), Expression('Log', 10, py_b))).evaluate(evaluation).to_python()))
+        print("len = ", len1)
+               
+        base_exp = int(mpmath.log(py_n, py_b))
+        exp = base_exp + 1 if base_exp >= 0 else base_exp
+        print("exp = ", exp)
+        list_str = Expression('List')
+        #list_str = [int(x) for x in str(py_n) if x != '.']
+        for x in str(py_n):
+            if x == 'e' or x == 'E':
+                break 
+            if x != '.':
+                list_str.leaves.append(from_python(int(x)))
+                
+        print(list_str)      
+        len_list = list_str.leaves.__len__()
+        if len_list > len1: return evaluation.message('RealDigits', 'ndig')   
+    
+        print("len_list= ", len_list)
+        while list_str.leaves.__len__() < len1:
+            list_str.leaves.append(from_python(0)) 
+            
+        print(list_str)
+        return Expression('List', list_str, exp)
 
 
 class Prime(Builtin):
