@@ -4770,7 +4770,7 @@ class Permutations(Builtin):
 class SubsetQ(Builtin):
     """
     <dl>
-    <dt>'SubsetQ[$list1$, $list2$][]'
+    <dt>'SubsetQ[$list1$, $list2$]'
         <dd>yields True if $list2$ is a subset of $list1$, and False otherwise.
     </dl>
 
@@ -4834,3 +4834,59 @@ class SubsetQ(Builtin):
             return Symbol('True')
         else:
             return Symbol('False')
+
+
+class ContainsOnly(Builtin):
+    """
+    <dl>
+    <dt>'ContainsOnly[$list1$, $list2$]'
+        <dd>yields True if $$list1$$ contains only elements that appear in $list2$.
+    </dl>
+
+    >> ContainsOnly[{b, a, a}, {a, b, c}]
+     = True
+    The first list contains elements not present in the second list:
+    >> ContainsOnly[{b, a, d}, {a, b, c}]
+     = False
+    >> ContainsOnly[{}, {a, b, c}]
+     = True
+
+    #> ContainsOnly[1, {1, 2, 3}]
+     : List or association expected instead of 1.
+     = ContainsOnly[1, {1, 2, 3}]
+    #> ContainsOnly[{1, 2, 3}, 4]
+     : List or association expected instead of 4.
+     = ContainsOnly[{1, 2, 3}, 4]
+    #> ContainsOnly[{c, a}, {a, b, c}, Modulus -> 1]
+     = True
+    #> ContainsOnly[{a, 1.0}, {1, a, b}, SameTest -> Equal]
+     = True
+    """
+
+    messages = {
+        'lsa': "List or association expected instead of `1`.",
+    }
+
+    options = {
+        'SameTest': 'SameQ',
+    }
+
+    def apply(self, expr, list, evaluation, options={}):
+        'ContainsOnly[expr_, list_, OptionsPattern[ContainsOnly]]'
+
+        if not expr.has_form('List', None):
+            return evaluation.message('ContainsOnly', 'lsa', expr)
+        if not list.has_form('List', None):
+            return evaluation.message('ContainsOnly', 'lsa', list)
+
+        same_test = self.get_option(options, 'SameTest', evaluation)
+
+        def same(a, b):
+            result = Expression(same_test, a, b).evaluate(evaluation)
+            return result.is_true()
+
+        for a in expr.leaves:
+            if not any(same(a, b) for b in list.leaves):
+                return Symbol('False')
+
+        return Symbol('True')
