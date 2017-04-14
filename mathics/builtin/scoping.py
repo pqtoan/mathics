@@ -207,6 +207,82 @@ class Module(Builtin):
         return result
 
 
+class Unique(Predefined):
+    """
+    <dl>
+    <dt>'Unique[]'
+        <dd>generates a new symbol and gives a name of the form '$number'.
+    <dt>'Unique[x]'
+        <dd>generates a new symbol and gives a name of the form 'x$number'.
+    <dt>'Unique[{x, y, ...}]'
+        <dd>generates a list of new symbols.
+    <dt>'Unique["xxx"]'
+        <dd>generates a new symbol and gives a name of the form 'xxxnumber'.
+    </dl>
+
+    Create a unique symbol with no particular name:
+    >> Unique[]
+     = $1
+    >> Unique[sym]
+     = sym$1
+    Create a unique symbol whose name begins with x:
+    >> Unique["x"]
+     = x2
+
+    #> Unique[]
+     = $3
+    #> Unique[{x, x}]
+     = {x$2, x$3}
+    Each use of Unique[symbol] increments $ModuleNumber:
+    #> {$ModuleNumber, Unique[x], $ModuleNumber}
+     = {4, x$4, 5}
+    Unique[symbol] creates symbols in the same way Module does:
+    #> {Module[{x}, x], Unique[x]}
+     = {x$5, x$6}
+    Unique with more arguments
+    #> Unique[x, y]
+     :  Unique called with 2 arguments; 0 or 1 argument are expected.
+     = Unique[x, y]
+    Unique call without symbol argument
+    #> Unique[x + y]
+     : x + y is not a symbol or a valid symbol name.
+     = Unique[x + y]
+    #> Unique[1]
+     : 1 is not a symbol or a valid symbol name.
+     = Unique[1]
+    """
+
+    seq_number = 1
+
+    messages = {
+        'usym': '`1` is not a symbol or a valid symbol name.',
+        'argrx': 'Unique called with `1` arguments; 0 or 1 argument are expected.',
+    }
+
+    attributes = ('Listable', 'Protected',)
+
+    rules = {
+        'Unique[x_Symbol]': 'Module[{x}, x]',
+    }
+
+    def apply(self, vars, evaluation):
+        'Unique[vars___]'
+
+        from mathics.core.parser import is_symbol_name
+
+        vars = vars.get_sequence()
+        if len(vars) > 1:
+            return evaluation.message('Unique', 'argrx', Integer(len(vars)))
+
+        text = '$' if len(vars) == 0 else vars[0].get_string_value()
+        if text is None or not is_symbol_name(text):
+            return evaluation.message('Unique', 'usym', vars[0])
+
+        new_name = '%s%d' % (text, self.seq_number)
+        self.seq_number += 1
+        return Symbol(new_name)
+
+
 class Context(Builtin):
     r"""
     <dl>
