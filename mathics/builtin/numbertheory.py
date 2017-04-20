@@ -20,7 +20,9 @@ from mathics.core.expression import (
 from mathics.core.numbers import (convert_base, convert_int_to_digit_list)
 import mpmath
 import string
+import re
 from mathics.builtin.algebra import Denominator
+from django.utils.regex_helper import contains
 class PowerMod(Builtin):
     """
     <dl>
@@ -324,61 +326,32 @@ class IntegerExponent(Builtin):
 
         return from_python(result - 1)
 
-def check_finite_decimal(denominator):
-    #The rational number is finite decimal if the denominator has form 2^a * 5^b
-    while denominator % 5 == 0:
-        denominator = denominator / 5
-    
-    while denominator % 2 == 0:
-        denominator = denominator / 2
-            
-    return True if denominator == 1 else False
 
-def convert_repeating_decimal(numerator, denominator):
-    head = [x for x in str(numerator  // denominator)]
-    tails = []
-    subresults = [numerator]
-    numerator %= denominator
-    while numerator != 0:
-        numerator *= 10
-        result_digit, numerator = divmod(numerator, denominator)
-        if numerator not in subresults:
-            subresults.append(numerator)
-            tails.append(str(result_digit))
-        else:
-            break
-    for i in range(len(head) - 1, -1, -1):
-        j = len(tails) - 1
-        if head[i] != tails[j]:
-            break;
-        else:
-            del(tails[j])
-            tails.insert(0, head[i])
-            del(head[i])
-            j = j - 1
-        
-    return (head, tails)
+def repetitions(s):
+   r = re.compile(r"(.+?)\1+")
+   for match in r.finditer(s):
+       return (s.find(match.group(1)), len(match.group(1)))
+   return (len(s), 0)
     
 def convert_float_base(x, base, precision=10):
     
     length_of_int = 0 if x == 0 else int(mpmath.log(x, base))
     iexps = list(range(length_of_int, -1, -1))
-    digits = string.digits + string.ascii_lowercase
-
-    def convert(x, base, exponents, is_float = False, int_part_is_zero = None):
+    
+    def convert(x, base, exponents, is_float=False, int_part_is_zero=None):
         out = []
         for e in exponents:
             d = int(x / (base ** e))
             x -= d * (base ** e)
             
             if is_float == False:
-                if out or d != 0:   # drop any leading zeroes
+                if out or d != 0:  # drop any leading zeroes
                     out.append(d)
                 if x == 0 and e < 0:
                     break
             else:
                 if not int_part_is_zero or int_part_is_zero[0] == '0':
-                    if out or d != 0:   # drop any leading zeroes if the int part is 0
+                    if out or d != 0:  # drop any leading zeroes if the int part is 0
                         out.append(d)
                 else:
                     out.append(d)
@@ -391,7 +364,6 @@ def convert_float_base(x, base, precision=10):
     if isinstance(x, (float, sympy.Float)):
         fexps = list(range(-1, -int(precision + 1), -1))
         real_part = convert(x - int(x), base, fexps, True, int_part)
-
         return int_part + real_part
     elif isinstance(x, six.integer_types):
         return int_part
@@ -520,13 +492,48 @@ class RealDigits(Builtin):
      
     #> RealDigits[Sqrt[3], 10, 50]
      = {{1, 7, 3, 2, 0, 5, 0, 8, 0, 7, 5, 6, 8, 8, 7, 7, 2, 9, 3, 5, 2, 7, 4, 4, 6, 3, 4, 1, 5, 0, 5, 8, 7, 2, 3, 6, 6, 9, 4, 2, 8, 0, 5, 2, 5, 3, 8, 1, 0, 3}, 1}
+    
+    #> RealDigits[0]
+     = {{0}, 1}
+    
+    #> RealDigits[1]
+     = {{1}, 1}
+     
+    #> RealDigits[0, 10, 5]
+     = {{0, 0, 0, 0, 0}, 0}
+     
+    #> RealDigits[11/23]
+     = {{{4, 7, 8, 2, 6, 0, 8, 6, 9, 5, 6, 5, 2, 1, 7, 3, 9, 1, 3, 0, 4, 3}}, 0}
+    
+    #> RealDigits[1/97]
+     = {{{1, 0, 3, 0, 9, 2, 7, 8, 3, 5, 0, 5, 1, 5, 4, 6, 3, 9, 1, 7, 5, 2, 5, 7, 7, 3, 1, 9, 5, 8, 7, 6, 2, 8, 8, 6, 5, 9, 7, 9, 3, 8, 1, 4, 4, 3, 2, 9, 8, 9, 6, 9, 0, 7, 2, 1, 6, 4, 9, 4, 8, 4, 5, 3, 6, 0, 8, 2, 4, 7, 4, 2, 2, 6, 8, 0, 4, 1, 2, 3, 7, 1, 1, 3, 4, 0, 2, 0, 6, 1, 8, 5, 5, 6, 7, 0}}, -1}
+    
+    #> RealDigits[1/3]
+     = {{{3}}, 0}
+     
+    #> RealDigits[1/2, 7]
+     = {{{3}}, 0}
+     
+    #> RealDigits[3/2, 7]
+     = {{1, {3}}, 1}
+     
+    #> RealDigits[1, 7, 5]
+     = {{1, 0, 0, 0, 0}, 1}
+     
+    #> RealDigits[I, 7]
+     : The value I is not a real number.
+     = RealDigits[I, 7]
+     
+    #> RealDigits[-Pi]
+     : The number of digits to return cannot be determined.
+     = RealDigits[-Pi]
+     
+    #> RealDigits[Round[x + y]]
+     = RealDigits[Round[x + y]]
+     
     """
     attributes = ('Listable',)
     
-    rules = {
-        'RealDigits[n_?NumericQ]' : 'RealDigits[n, 10]',
-    }
-
     messages = {
         'realx': 'The value `1` is not a real number.',
         'ndig': 'The number of digits to return cannot be determined.',
@@ -535,32 +542,71 @@ class RealDigits(Builtin):
         'intm' : 'Machine-sized integer expected at position 4 in `1`.',
     }
     
-    def apply_complex(self, n, evaluation):
-        'RealDigits[n_Complex]'
+    def apply(self, n, evaluation):
+        'RealDigits[n_]'
+        
+        # Handling the testcase that throw the error message and return the ouput that doesn't include `base` argument
+        if isinstance(n, Symbol):
+            return evaluation.message('RealDigits', 'ndig', n) if n.name.startswith('System`')  else Expression('RealDigits', n)
+        
+        if n.is_numeric():
+            return self.apply_2(n, from_python(10), evaluation)
+        
+    def apply_complex(self, n, var, evaluation):
+        'RealDigits[n_Complex, var___]'
         return evaluation.message('RealDigits', 'realx', n)
-
-    def apply_symbol(self, n, evaluation):
-        'RealDigits[n_Symbol]'
-        #Handling the testcase that throw the error message that doesn't include `base` argument
-        return evaluation.message('RealDigits', 'ndig', n) if n.name == "System`Pi" or n.name == "System`E" else Expression('RealDigits', n)
-
+    
+    def apply_rational2(self, n, b, evaluation):
+        'RealDigits[n_Rational, b_]'
+        
+        expr = Expression('RealDigits', n)
+        denominator = n.denominator().to_python()
+        n = Expression('N', n, denominator * 2).evaluate(evaluation)
+           
+        py_n = abs(n.value)
+        py_b = b.to_python()
+        
+        if not py_b > 1:
+            return evaluation.message('RealDigits', 'rbase', py_b)
+        
+        display_len = int(Expression('N', Expression('Round', Expression('Divide', Expression('Precision', py_n), Expression('Log', 10, py_b)))).evaluate(evaluation).to_python())                              
+        exp = int(mpmath.ceil(mpmath.log(py_n, py_b))) if py_n != 0 and py_n != 1 else int(1)
+        if py_n == 0 and nr_elements is not None:
+            exp = 0
+            
+        digits = [] 
+        
+        if not py_b == 10: 
+            digits = convert_float_base(py_n, py_b, display_len - exp)
+                    
+        else:
+            # drop any leading zeroes
+            for x in str(py_n):
+                if x != '.' and (digits or x != '0'):
+                    digits.append(x)
+                    
+        list_str = Expression('List')
+        
+        (index, repeat_len) = repetitions("".join(str(x) for x in digits))
+        nonrepeat_part = digits[0:index]
+        last_index = repeat_len + 1 if index != 0 else repeat_len
+        repeat_part = digits[index:last_index]
+        
+        for x in nonrepeat_part:
+            if x == 'e' or x == 'E':
+                break 
+            # Convert to Mathics' list format
+            list_str.leaves.append(from_python(int(x)))
+        if len(repeat_part) != 0:
+            list_str.leaves.append(from_python(repeat_part))
+        return Expression('List', list_str, exp)
+        
     def apply_rational(self, n, evaluation):
         'RealDigits[n_Rational]'
-        expr = Expression('RealDigits', n)
         py_n = abs(n.value)
-        
-        if check_finite_decimal(n.denominator().to_python()) == True:
-            return self.apply_2(n, from_python(10), evaluation)
-        else:
-            exp = int(mpmath.ceil(mpmath.log(py_n, 10)))
-            (head, tails) = convert_repeating_decimal(n.numerator().to_python(), n.denominator().to_python())
-            list_str = Expression('List')
-            for x in head:
-                list_str.leaves.append(from_python(int(x)))
-            list_str.leaves.append(from_python(tails))
-            return Expression('List', list_str, exp)
+        return self.apply_rational2(n, from_python(10), evaluation)
     
-    def apply_2(self, n, b, evaluation, nr_elements = None, pos = None):
+    def apply_2(self, n, b, evaluation, nr_elements=None, pos=None):
         'RealDigits[n_?NumericQ, b_?NumericQ]'
         rational_no = True if isinstance(n, Rational) else False
         expr = Expression('RealDigits', n)
@@ -583,16 +629,19 @@ class RealDigits(Builtin):
             return evaluation.message('RealDigits', 'realx', expr)
         
         if isinstance(n, Integer):
-            display_len = int(mpmath.floor(mpmath.log(py_n, py_b)))
+            display_len = int(mpmath.floor(mpmath.log(py_n, py_b))) if py_n != 0 and py_n != 1 else int(1)
         else:
-            display_len = int(mpmath.ceil(Expression('N', Expression('Divide', Expression('Precision', py_n), Expression('Log', 10, py_b))).evaluate(evaluation).to_python()))
+            display_len = int(Expression('N', Expression('Round', Expression('Divide', Expression('Precision', py_n), Expression('Log', 10, py_b)))).evaluate(evaluation).to_python())
         
-        exp = int(mpmath.ceil(mpmath.log(py_n, py_b)))
-        
+        exp = int(mpmath.ceil(mpmath.log(py_n, py_b))) if py_n != 0 and py_n != 1 else int(1)
+        if py_n == 0 and nr_elements is not None:
+            exp = 0
+            
         digits = [] 
         
         if not py_b == 10: 
             digits = convert_float_base(py_n, py_b, display_len - exp)
+                    
         else:
             # drop any leading zeroes
             for x in str(py_n):
@@ -613,26 +662,31 @@ class RealDigits(Builtin):
         for x in digits:
             if x == 'e' or x == 'E':
                 break 
-            #Convert to Mathics' list format
+            # Convert to Mathics' list format
             list_str.leaves.append(from_python(int(x)))  
         
         if rational_no is not True:
             while len(list_str.leaves) < display_len:
-                list_str.leaves.append(from_python(0)) 
-            
+                list_str.leaves.append(from_python(0))
+        
         if nr_elements is not None:
-            #display_len = nr_elements
+            
+            # display_len = nr_elements
             if len(list_str.leaves) >= nr_elements:
                 # Truncate, preserving the digits on the right
                 list_str = list_str.leaves[:nr_elements]   
             else:
-                # Adding Indeterminate if the lenght is greater than the precision
-                while(len(list_str.leaves) < nr_elements):
-                    list_str.leaves.append(from_python(Symbol('Indeterminate')))
-               
+                if isinstance(n, Integer):
+                    while(len(list_str.leaves) < nr_elements):
+                        list_str.leaves.append(from_python(0))
+                else:
+                    # Adding Indeterminate if the lenght is greater than the precision
+                    while(len(list_str.leaves) < nr_elements):
+                        list_str.leaves.append(from_python(Symbol('Indeterminate')))
+
         return Expression('List', list_str, exp)
     
-    def apply_3(self, n, b, length, evaluation, pos = None):
+    def apply_3(self, n, b, length, evaluation, pos=None):
         'RealDigits[n_?NumericQ, b_?NumericQ, length_]'
         
         expr = Expression('RealDigits', n, b, length)
@@ -643,7 +697,7 @@ class RealDigits(Builtin):
         if not(isinstance(length, Integer) and length.get_int_value() >= 0):
             return evaluation.message('RealDigits', 'intnm', expr)
         
-        return self.apply_2(n, b, evaluation, nr_elements = length.get_int_value(), pos = pos)
+        return self.apply_2(n, b, evaluation, nr_elements=length.get_int_value(), pos=pos)
     
     def apply_4(self, n, b, length, p, evaluation):
         'RealDigits[n_?NumericQ, b_?NumericQ, length_, p_]'
@@ -651,7 +705,7 @@ class RealDigits(Builtin):
         if not isinstance(p, Integer):
             return evaluation.message('RealDigits', 'intm', Expression('RealDigits', n, b, length, p))
         
-        return self.apply_3(n, b, length, evaluation, pos = p.get_int_value())
+        return self.apply_3(n, b, length, evaluation, pos=p.get_int_value())
 
 class Prime(Builtin):
     """
