@@ -326,13 +326,50 @@ class IntegerExponent(Builtin):
 
         return from_python(result - 1)
 
-
-def repetitions(s):
-   r = re.compile(r"(.+?)\1+")
-   for match in r.finditer(s):
-       return (s.find(match.group(1)), len(match.group(1)))
-   return (len(s), 0)
+def check_finite_decimal(denominator):
+    # The rational number is finite decimal if the denominator has form 2^a * 5^b
+    while denominator % 5 == 0:
+        denominator = denominator / 5
     
+    while denominator % 2 == 0:
+        denominator = denominator / 2
+            
+    return True if denominator == 1 else False
+
+def convert_repeating_decimal(numerator, denominator, base):
+    head = [x for x in str(numerator // denominator)]
+    tails = []
+    subresults = [numerator % denominator]
+    numerator %= denominator
+    
+    while numerator != 0:  # only rational input can go to this case
+        numerator *= base
+        result_digit, numerator = divmod(numerator, denominator)
+        tails.append(str(result_digit))
+        if numerator not in subresults:
+            subresults.append(numerator)           
+        else:
+            break
+        
+    for i in range(len(head) - 1, -1, -1):
+        j = len(tails) - 1
+        if head[i] != tails[j]:
+            break;
+        else:
+            del(tails[j])
+            tails.insert(0, head[i])
+            del(head[i])
+            j = j - 1
+    
+    #truncate all leading 0's        
+    if all(elem == '0' for elem in head):
+        for i in range(0, len(tails)):
+            if tails[0] == '0':
+               tails = tails[1:] + [str(0)]
+            else:
+               break 
+    return (head, tails)
+
 def convert_float_base(x, base, precision=10):
     
     length_of_int = 0 if x == 0 else int(mpmath.log(x, base))
@@ -508,6 +545,9 @@ class RealDigits(Builtin):
     #> RealDigits[1/97]
      = {{{1, 0, 3, 0, 9, 2, 7, 8, 3, 5, 0, 5, 1, 5, 4, 6, 3, 9, 1, 7, 5, 2, 5, 7, 7, 3, 1, 9, 5, 8, 7, 6, 2, 8, 8, 6, 5, 9, 7, 9, 3, 8, 1, 4, 4, 3, 2, 9, 8, 9, 6, 9, 0, 7, 2, 1, 6, 4, 9, 4, 8, 4, 5, 3, 6, 0, 8, 2, 4, 7, 4, 2, 2, 6, 8, 0, 4, 1, 2, 3, 7, 1, 1, 3, 4, 0, 2, 0, 6, 1, 8, 5, 5, 6, 7, 0}}, -1}
     
+    #> RealDigits[1/97, 2]
+     = {{{1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}}, -6}
+   
     #> RealDigits[1/3]
      = {{{3}}, 0}
      
@@ -516,6 +556,9 @@ class RealDigits(Builtin):
      
     #> RealDigits[3/2, 7]
      = {{1, {3}}, 1}
+    
+    #> RealDigits[3/2, 6]
+     = {{1, 3}, 1}
      
     #> RealDigits[1, 7, 5]
      = {{1, 0, 0, 0, 0}, 1}
@@ -556,58 +599,36 @@ class RealDigits(Builtin):
         'RealDigits[n_Complex, var___]'
         return evaluation.message('RealDigits', 'realx', n)
     
-    def apply_rational2(self, n, b, evaluation):
+    def apply_rational_with_base(self, n, b, evaluation):
         'RealDigits[n_Rational, b_]'
         
         expr = Expression('RealDigits', n)
-        denominator = n.denominator().to_python()
-        n = Expression('N', n, denominator * 2).evaluate(evaluation)
            
         py_n = abs(n.value)
         py_b = b.to_python()
         
-        if not py_b > 1:
-            return evaluation.message('RealDigits', 'rbase', py_b)
-        
-        display_len = int(Expression('N', Expression('Round', Expression('Divide', Expression('Precision', py_n), Expression('Log', 10, py_b)))).evaluate(evaluation).to_python())                              
-        exp = int(mpmath.ceil(mpmath.log(py_n, py_b))) if py_n != 0 and py_n != 1 else int(1)
-        if py_n == 0 and nr_elements is not None:
-            exp = 0
-            
-        digits = [] 
-        
-        if not py_b == 10: 
-            digits = convert_float_base(py_n, py_b, display_len - exp)
-                    
+        if check_finite_decimal(n.denominator().to_python()) == True and not py_b % 2 :
+            return self.apply_2(n, b, evaluation)
         else:
-            # drop any leading zeroes
-            for x in str(py_n):
-                if x != '.' and (digits or x != '0'):
-                    digits.append(x)
-                    
-        list_str = Expression('List')
-        
-        (index, repeat_len) = repetitions("".join(str(x) for x in digits))
-        nonrepeat_part = digits[0:index]
-        last_index = repeat_len + 1 if index != 0 else repeat_len
-        repeat_part = digits[index:last_index]
-        
-        for x in nonrepeat_part:
-            if x == 'e' or x == 'E':
-                break 
-            # Convert to Mathics' list format
-            list_str.leaves.append(from_python(int(x)))
-        if len(repeat_part) != 0:
-            list_str.leaves.append(from_python(repeat_part))
+            exp = int(mpmath.ceil(mpmath.log(py_n, py_b)))
+            (head, tails) = convert_repeating_decimal(n.numerator().to_python(), n.denominator().to_python(), py_b)
+            
+            list_str = Expression('List')
+            for x in head:
+                if not x == '0':
+                    list_str.leaves.append(from_python(int(x)))
+            list_str.leaves.append(from_python(tails))
+            
         return Expression('List', list_str, exp)
-        
+    
     def apply_rational(self, n, evaluation):
         'RealDigits[n_Rational]'
-        py_n = abs(n.value)
-        return self.apply_rational2(n, from_python(10), evaluation)
-    
+        
+        return self.apply_rational_with_base(n, from_python(10), evaluation)
+ 
     def apply_2(self, n, b, evaluation, nr_elements=None, pos=None):
         'RealDigits[n_?NumericQ, b_?NumericQ]'
+        
         rational_no = True if isinstance(n, Rational) else False
         expr = Expression('RealDigits', n)
         if isinstance(n, (Expression, Symbol, Rational)):
@@ -670,7 +691,7 @@ class RealDigits(Builtin):
                 list_str.leaves.append(from_python(0))
         
         if nr_elements is not None:
-            
+                    
             # display_len = nr_elements
             if len(list_str.leaves) >= nr_elements:
                 # Truncate, preserving the digits on the right
