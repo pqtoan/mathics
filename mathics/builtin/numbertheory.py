@@ -361,7 +361,7 @@ def convert_repeating_decimal(numerator, denominator, base):
             del(head[i])
             j = j - 1
     
-    #truncate all leading 0's        
+    # truncate all leading 0's        
     if all(elem == '0' for elem in head):
         for i in range(0, len(tails)):
             if tails[0] == '0':
@@ -375,32 +375,32 @@ def convert_float_base(x, base, precision=10):
     length_of_int = 0 if x == 0 else int(mpmath.log(x, base))
     iexps = list(range(length_of_int, -1, -1))
     
-    def convert(x, base, exponents, is_float=False, int_part_is_zero=None):
+    def convert_int(x, base, exponents):
         out = []
-        for e in exponents:
-            d = int(x / (base ** e))
-            x -= d * (base ** e)
-            
-            if is_float == False:
-                if out or d != 0:  # drop any leading zeroes
-                    out.append(d)
-                if x == 0 and e < 0:
-                    break
-            else:
-                if not int_part_is_zero or int_part_is_zero[0] == '0':
-                    if out or d != 0:  # drop any leading zeroes if the int part is 0
-                        out.append(d)
-                else:
-                    out.append(d)
-                if x == 0 and e > exponents[len(exponents) - 1]:
-                    break
+        for e in range(0, exponents + 1):
+            d = x % base
+            out.append(d)
+            x = x / base
+            if x == 0:
+                break
+        out.reverse()
         return out
-    
-    int_part = convert(int(x), base, iexps)
-    
+
+    def convert_float(x, base, exponents):
+        out = []
+        for e in range(0, exponents):
+            d = int(x * base)
+            out.append(d)
+            x = (x * base) - d
+            if x == 0:
+                break
+        return out
+        # print(out,out.reverse())
+    int_part = convert_int(int(x), base, length_of_int)
     if isinstance(x, (float, sympy.Float)):
         fexps = list(range(-1, -int(precision + 1), -1))
-        real_part = convert(x - int(x), base, fexps, True, int_part)
+        # real_part = convert(x - int(x), base, fexps, True, int_part)
+        real_part = convert_float(x - int(x), base, precision + 1)
         return int_part + real_part
     elif isinstance(x, six.integer_types):
         return int_part
@@ -548,6 +548,18 @@ class RealDigits(Builtin):
     #> RealDigits[1/97, 2]
      = {{{1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}}, -6}
    
+    #> RealDigits[1/197, 260, 5]
+     = {{1, 83, 38, 71, 69}, 0}
+     
+    #> RealDigits[1/197, 260, 5, -6]
+     = {{246, 208, 137, 67, 80}, -5}
+     
+    #> RealDigits[Pi, 260, 20]
+     = {{3, 36, 211, 172, 124, 173, 210, 42, 162, 76, 23, 206, 122, 187, 23, 245, 241, 225, 254, 98}, 1}
+  
+    #> RealDigits[Pi, 260, 5]
+     = {{3, 36, 211, 172, 124}, 1}
+     
     #> RealDigits[1/3]
      = {{{3}}, 0}
      
@@ -557,6 +569,9 @@ class RealDigits(Builtin):
     #> RealDigits[3/2, 7]
      = {{1, {3}}, 1}
     
+    #> RealDigits[-3/2, 7]
+     = {{1, {3}}, 1}
+     
     #> RealDigits[3/2, 6]
      = {{1, 3}, 1}
      
@@ -573,6 +588,7 @@ class RealDigits(Builtin):
      
     #> RealDigits[Round[x + y]]
      = RealDigits[Round[x + y]]
+    
      
     """
     attributes = ('Listable',)
@@ -585,22 +601,12 @@ class RealDigits(Builtin):
         'intm' : 'Machine-sized integer expected at position 4 in `1`.',
     }
     
-    def apply(self, n, evaluation):
-        'RealDigits[n_]'
-        
-        # Handling the testcase that throw the error message and return the ouput that doesn't include `base` argument
-        if isinstance(n, Symbol):
-            return evaluation.message('RealDigits', 'ndig', n) if n.name.startswith('System`')  else Expression('RealDigits', n)
-        
-        if n.is_numeric():
-            return self.apply_2(n, from_python(10), evaluation)
-        
     def apply_complex(self, n, var, evaluation):
         'RealDigits[n_Complex, var___]'
         return evaluation.message('RealDigits', 'realx', n)
     
     def apply_rational_with_base(self, n, b, evaluation):
-        'RealDigits[n_Rational, b_]'
+        'RealDigits[n_Rational, b_Integer]'
         
         expr = Expression('RealDigits', n)
            
@@ -611,7 +617,7 @@ class RealDigits(Builtin):
             return self.apply_2(n, b, evaluation)
         else:
             exp = int(mpmath.ceil(mpmath.log(py_n, py_b)))
-            (head, tails) = convert_repeating_decimal(n.numerator().to_python(), n.denominator().to_python(), py_b)
+            (head, tails) = convert_repeating_decimal(py_n.as_numer_denom()[0], py_n.as_numer_denom()[1], py_b)
             
             list_str = Expression('List')
             for x in head:
@@ -621,27 +627,37 @@ class RealDigits(Builtin):
             
         return Expression('List', list_str, exp)
     
-    def apply_rational(self, n, evaluation):
+    def apply_rational_without_base(self, n, evaluation):
         'RealDigits[n_Rational]'
         
         return self.apply_rational_with_base(n, from_python(10), evaluation)
  
+    def apply(self, n, evaluation):
+        'RealDigits[n_]'
+        
+        # Handling the testcase that throw the error message and return the ouput that doesn't include `base` argument
+        if isinstance(n, Symbol):
+            return evaluation.message('RealDigits', 'ndig', n) if n.name.startswith('System`')  else Expression('RealDigits', n)
+        
+        if n.is_numeric():
+            return self.apply_2(n, from_python(10), evaluation)
+        
     def apply_2(self, n, b, evaluation, nr_elements=None, pos=None):
-        'RealDigits[n_?NumericQ, b_?NumericQ]'
+        'RealDigits[n_?NumericQ, b_Integer]'
         
         rational_no = True if isinstance(n, Rational) else False
         expr = Expression('RealDigits', n)
+        py_b = b.to_python()
         if isinstance(n, (Expression, Symbol, Rational)):
             pos_len = abs(pos) + 1 if pos is not None and pos < 0 else 1
             if nr_elements is not None:
-                n = Expression('N', n, nr_elements + pos_len).evaluate(evaluation)
+                n = Expression('N', n, int(mpmath.log(py_b ** (nr_elements + pos_len), 10)) + 1).evaluate(evaluation)
             else:
                 if isinstance(n, Rational):
                     n = Expression('N', n).evaluate(evaluation)
                 else:
                     return evaluation.message('RealDigits', 'ndig', expr)
         py_n = abs(n.value)
-        py_b = b.to_python()
         
         if not py_b > 1:
             return evaluation.message('RealDigits', 'rbase', py_b)
@@ -655,6 +671,7 @@ class RealDigits(Builtin):
             display_len = int(Expression('N', Expression('Round', Expression('Divide', Expression('Precision', py_n), Expression('Log', 10, py_b)))).evaluate(evaluation).to_python())
         
         exp = int(mpmath.ceil(mpmath.log(py_n, py_b))) if py_n != 0 and py_n != 1 else int(1)
+        
         if py_n == 0 and nr_elements is not None:
             exp = 0
             
@@ -662,13 +679,21 @@ class RealDigits(Builtin):
         
         if not py_b == 10: 
             digits = convert_float_base(py_n, py_b, display_len - exp)
+            # truncate all the leading 0's
+            for i in range(0, len(digits)):
+                if(digits[0] != 0):
+                    break
+                else:
+                    digits = digits[1:]
                     
+            if not isinstance(n, Integer):
+                if len(digits) > display_len:
+                    digits = digits[:display_len-1]    
         else:
             # drop any leading zeroes
             for x in str(py_n):
                 if x != '.' and (digits or x != '0'):
                     digits.append(x)
-        
         if pos is not None:
             temp = exp
             exp = pos + 1
@@ -678,6 +703,7 @@ class RealDigits(Builtin):
             else:
                 digits = digits[abs(move):]
                 display_len = display_len - move 
+                
         list_str = Expression('List')
         
         for x in digits:
@@ -708,7 +734,7 @@ class RealDigits(Builtin):
         return Expression('List', list_str, exp)
     
     def apply_3(self, n, b, length, evaluation, pos=None):
-        'RealDigits[n_?NumericQ, b_?NumericQ, length_]'
+        'RealDigits[n_?NumericQ, b_Integer, length_]'
         
         expr = Expression('RealDigits', n, b, length)
         
@@ -721,7 +747,7 @@ class RealDigits(Builtin):
         return self.apply_2(n, b, evaluation, nr_elements=length.get_int_value(), pos=pos)
     
     def apply_4(self, n, b, length, p, evaluation):
-        'RealDigits[n_?NumericQ, b_?NumericQ, length_, p_]'
+        'RealDigits[n_?NumericQ, b_Integer, length_, p_]'
         
         if not isinstance(p, Integer):
             return evaluation.message('RealDigits', 'intm', Expression('RealDigits', n, b, length, p))
