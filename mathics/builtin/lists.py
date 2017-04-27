@@ -4795,36 +4795,45 @@ class SubsetQ(Builtin):
     """
     <dl>
     <dt>'SubsetQ[$list1$, $list2$]'
-        <dd>yields True if $list2$ is a subset of $list1$, and False otherwise.
+        <dd>returns True if $list2$ is a subset of $list1$, and False otherwise.
     </dl>
 
     >> SubsetQ[{1, 2, 3}, {3, 1}]
      = True
+
     The empty list is a subset of every list:
     >> SubsetQ[{}, {}]
      = True
+
     >> SubsetQ[{1, 2, 3}, {}]
      = True
+
     Every list is a subset of itself:
     >> SubsetQ[{1, 2, 3}, {1, 2, 3}]
      = True
 
     #> SubsetQ[{1, 2, 3}, {0, 1}]
      = False
+
     #> SubsetQ[{1, 2, 3}, {1, 2, 3, 4}]
      = False
+
     #> SubsetQ[{1, 2, 3}]
      : SubsetQ called with 1 argument; 2 arguments are expected.
      = SubsetQ[{1, 2, 3}]
+
     #> SubsetQ[{1, 2, 3}, {1, 2}, {3}]
      : SubsetQ called with 3 arguments; 2 arguments are expected.
      = SubsetQ[{1, 2, 3}, {1, 2}, {3}]
+
     #> SubsetQ[a + b + c, {1}]
      : Heads Plus and List at positions 1 and 2 are expected to be the same.
      = SubsetQ[a + b + c, {1}]
+
     #> SubsetQ[{1, 2, 3}, n]
      : Nonatomic expression expected at position 2 in SubsetQ[{1, 2, 3}, n].
      = SubsetQ[{1, 2, 3}, n]
+
     #> SubsetQ[f[a, b, c], f[a]]
      = True
     """
@@ -4869,39 +4878,66 @@ class ContainsOnly(Builtin):
 
     >> ContainsOnly[{b, a, a}, {a, b, c}]
      = True
+
     The first list contains elements not present in the second list:
     >> ContainsOnly[{b, a, d}, {a, b, c}]
      = False
+
     >> ContainsOnly[{}, {a, b, c}]
      = True
 
     #> ContainsOnly[1, {1, 2, 3}]
      : List or association expected instead of 1.
      = ContainsOnly[1, {1, 2, 3}]
+
     #> ContainsOnly[{1, 2, 3}, 4]
      : List or association expected instead of 4.
      = ContainsOnly[{1, 2, 3}, 4]
-    #> ContainsOnly[{c, a}, {a, b, c}, Modulus -> 1]
+
+    #> ContainsOnly[{c, a}, {a, b, c}, IgnoreCase -> True]
+     : Unknown option IgnoreCase for ContainsOnly.
      = True
-    #> ContainsOnly[{a, 1.0}, {1, a, b}, SameTest -> Equal]
+
+    #> ContainsOnly[{a, 1.0}, {1, a, b}, {IgnoreCase -> True, SameTest -> Equal}]
+     : Unknown option IgnoreCase for ContainsOnly.
      = True
+
+    #> ContainsOnly[Pi, "E", {IgnoreCase -> True, SameTest -> Equal}]
+     : List or association expected instead of E.
+     : Unknown option IgnoreCase in ContainsOnly[Pi, E, {IgnoreCase -> True, SameTest -> Equal}].
+     = ContainsOnly[Pi, E, {IgnoreCase -> True, SameTest -> Equal}]
+
+    #> ContainsOnly["Pi", E, {IgnoreCase -> True, SameTest -> Equal}]
+     : List or association expected instead of Pi.
+     : Unknown option IgnoreCase in ContainsOnly[Pi, E, {IgnoreCase -> True, SameTest -> Equal}].
+     = ContainsOnly[Pi, E, {IgnoreCase -> True, SameTest -> Equal}]
+
+    #> ContainsOnly[Pi, E, {IgnoreCase -> True, SameTest -> Equal}]
+     : Unknown option IgnoreCase in ContainsOnly[Pi, E, {IgnoreCase -> True, SameTest -> Equal}].
+     = ContainsOnly[Pi, E, {IgnoreCase -> True, SameTest -> Equal}]
     """
 
     messages = {
         'lsa': "List or association expected instead of `1`.",
+        'nodef': "Unknown option `1` for ContainsOnly.",
+        'optx': "Unknown option `1` in `2`.",
     }
 
     options = {
         'SameTest': 'SameQ',
     }
 
-    def apply(self, expr, list, evaluation, options={}):
-        'ContainsOnly[expr_, list_, OptionsPattern[ContainsOnly]]'
+    def check_options(self, expr, evaluation, options):
+        for key in options.keys():
+            if key != 'System`SameTest':
+                if expr is None:
+                    evaluation.message('ContainsOnly', 'nodef', Symbol(key))
+                else:
+                    return evaluation.message('ContainsOnly', 'optx', Symbol(key), expr)
+        return None
 
-        if not expr.has_form('List', None):
-            return evaluation.message('ContainsOnly', 'lsa', expr)
-        if not list.has_form('List', None):
-            return evaluation.message('ContainsOnly', 'lsa', list)
+    def apply(self, list1, list2, evaluation, options={}):
+        'ContainsOnly[list1_?ListQ, list2_?ListQ, OptionsPattern[ContainsOnly]]'
 
         same_test = self.get_option(options, 'SameTest', evaluation)
 
@@ -4909,8 +4945,143 @@ class ContainsOnly(Builtin):
             result = Expression(same_test, a, b).evaluate(evaluation)
             return result.is_true()
 
-        for a in expr.leaves:
-            if not any(same(a, b) for b in list.leaves):
+        self.check_options(None, evaluation, options)
+        for a in list1.leaves:
+            if not any(same(a, b) for b in list2.leaves):
                 return Symbol('False')
-
         return Symbol('True')
+
+    def apply_msg(self, e1, e2, evaluation, options={}):
+        'ContainsOnly[e1_, e2_, OptionsPattern[ContainsOnly]]'
+
+        opts = options_to_rules(options) if len(options) <= 1 else [Expression('List', *options_to_rules(options))]
+        expr = Expression('ContainsOnly', e1, e2, *opts)
+
+        if not isinstance(e1, Symbol) and not e1.has_form('List', None):
+            evaluation.message('ContainsOnly', 'lsa', e1)
+            return self.check_options(expr, evaluation, options)
+
+        if not isinstance(e2, Symbol) and not e2.has_form('List', None):
+            evaluation.message('ContainsOnly', 'lsa', e2)
+            return self.check_options(expr, evaluation, options)
+
+        return self.check_options(expr, evaluation, options)
+
+
+class Association(Builtin):
+    """
+    <dl>
+    <dt>'Association[$key1$ -> $val1$, $key2$ -> $val2$, ...]'
+    <dt>'<|$key1$ -> $val1$, $key2$ -> $val2$, ...|>'
+        <dd>represents a association between keys and values.
+    </dl>
+
+    'Association' is the head of associations:
+    >> Head[<|a -> x, b -> y, c -> z|>]
+     = Association
+
+    >> <|a -> x, b -> y|>
+     = <|a -> x, b -> y|>
+
+    >> Association[{a -> x, b -> y}]
+     = <|a -> x, b -> y|>
+
+    Associations can be nested:
+    #> <|a -> x, b -> y, <|a -> z, d -> t|>|>
+     = <|a -> z, b -> y, d -> t|>
+
+    #> <|a -> x, b -> y, c -> <|d -> t|>|>
+     = <|a -> x, b -> y, c -> <|d -> t|>|>
+    #> %["s"]
+     = Missing[KeyAbsent, s]
+
+    #> <|a -> x, b + c -> y, {<|{}|>, a -> {z}}|>
+     = <|a -> {z}, b + c -> y|>
+    #> %[a]
+     = {z}
+
+    #> <|"x" -> 1, {y} -> 1|>
+     = <|x -> 1, {y} -> 1|>
+    #> %["x"]
+     = 1
+
+    #> <|a, b -> y|>
+     = Association[a, b -> y]
+    #> %[c]
+     = Association[a, b -> y][c]
+
+    #> <|a -> x, b -> y, <|a -> z, {c}|>, {}|>[a]
+    = Association[a -> x, b -> y, Association[a -> z, {c}], {}][a]
+
+    #> <|a -> x, b -> y, c -> <|d -> t|>|> // ToBoxes
+     = RowBox[{<|, RowBox[{RowBox[{a, ->, x}], ,, RowBox[{b, ->, y}], ,, RowBox[{c, ->, RowBox[{<|, RowBox[{d, ->, t}], |>}]}]}], |>}]
+
+    #> Association[a -> x, b -> y, c -> Association[d -> t, Association[e -> u]]] // ToBoxes
+     = RowBox[{<|, RowBox[{RowBox[{a, ->, x}], ,, RowBox[{b, ->, y}], ,, RowBox[{c, ->, RowBox[{<|, RowBox[{RowBox[{d, ->, t}], ,, RowBox[{e, ->, u}]}], |>}]}]}], |>}]
+    """
+
+    attributes = ('HoldAllComplete', 'Protected',)
+
+    def apply_makeboxes(self, rules, f, evaluation):
+        '''MakeBoxes[<|rules___|>,
+            f:StandardForm|TraditionalForm|OutputForm|InputForm]'''
+
+        def check_valid(exprs):
+            for expr in exprs:
+                if expr.has_form('Rule', 2):
+                    pass
+                elif expr.has_form('List', None) or expr.has_form('Association', None):
+                    check_valid(expr.leaves)
+                else:
+                    raise
+
+        rules = rules.get_sequence()
+        try:
+            check_valid(rules)
+        except:
+            symbol = Expression('MakeBoxes', Symbol('Association'), f)
+            return Expression('RowBox', Expression('List', symbol, *list_boxes(rules, f, "[", "]")))
+
+        return Expression('RowBox', Expression('List', *list_boxes(rules, f, "<|", "|>")))
+
+    def apply(self, rules, evaluation):
+        'Association[rules__]'
+
+        def make_flatten(exprs, dic={}, keys=[]):
+            for expr in exprs:
+                if expr.has_form('Rule', 2):
+                    key = expr.leaves[0]
+                    dic[key] = expr
+                    if key not in keys:
+                        keys.append(key)
+                elif expr.has_form('List', None) or expr.has_form('Association', None):
+                    make_flatten(expr.leaves, dic, keys)
+                else:
+                    raise
+            return [dic[key] for key in keys]
+
+        try:
+            return Expression('Association', *make_flatten(rules.get_sequence()))
+        except:
+            return None
+
+    def apply_key(self, rules, key, evaluation):
+        'Association[rules__][key_]'
+
+        def find_key(exprs, dic={}):
+            for expr in exprs:
+                if expr.has_form('Rule', 2):
+                    if expr.leaves[0] == key:
+                        dic[key] = expr.leaves[1]
+                elif expr.has_form('List', None) or expr.has_form('Association', None):
+                    find_key(expr.leaves)
+                else:
+                    raise
+            return dic
+
+        try:
+            result = find_key(rules.get_sequence())
+        except:
+            return None
+
+        return result[key] if result else Expression('Missing', Symbol('KeyAbsent'), key)

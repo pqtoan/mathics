@@ -223,33 +223,58 @@ class Unique(Predefined):
     Create a unique symbol with no particular name:
     >> Unique[]
      = $1
+
     >> Unique[sym]
      = sym$1
+
     Create a unique symbol whose name begins with x:
     >> Unique["x"]
      = x2
 
     #> Unique[]
      = $3
+
+    #> Unique[{}]
+     = {}
+
     #> Unique[{x, x}]
      = {x$2, x$3}
+
     Each use of Unique[symbol] increments $ModuleNumber:
     #> {$ModuleNumber, Unique[x], $ModuleNumber}
      = {4, x$4, 5}
+
     Unique[symbol] creates symbols in the same way Module does:
     #> {Module[{x}, x], Unique[x]}
      = {x$5, x$6}
+
     Unique with more arguments
-    #> Unique[x, y]
-     :  Unique called with 2 arguments; 0 or 1 argument are expected.
-     = Unique[x, y]
+    #> Unique[{x, "s"}, Flat ^ Listable ^ Orderless]
+     : Flat ^ Listable ^ Orderless is not a known attribute.
+     = Unique[{x, s}, Flat ^ Listable ^ Orderless]
+
     Unique call without symbol argument
     #> Unique[x + y]
      : x + y is not a symbol or a valid symbol name.
      = Unique[x + y]
+
     #> Unique[1]
      : 1 is not a symbol or a valid symbol name.
      = Unique[1]
+
+    #> Unique[{m, "s", n}, {Flat, Listable, Orderless}]
+     = {m$7, s4, n$8}
+    #> Attributes[{m$7, s4, n$8}]
+     = {{Flat, Listable, Orderless}, {Flat, Listable, Orderless}, {Flat, Listable, Orderless}}
+
+    #> Unique[{x, "s", 1}, {Flat ^ Listable ^ Orderless}]
+     : 1 is not a symbol or a valid symbol name.
+     = Unique[{x, s, 1}, {Flat ^ Listable ^ Orderless}]
+
+    #> Unique[{"s"}, Flat]
+     = {s5}
+    #> Attributes[s5]
+     = {Flat}
     """
 
     seq_number = 1
@@ -257,30 +282,64 @@ class Unique(Predefined):
     messages = {
         'usym': '`1` is not a symbol or a valid symbol name.',
         'argrx': 'Unique called with `1` arguments; 0 or 1 argument are expected.',
+        'attnf': '`1` is not a known attribute.',
+
     }
 
-    attributes = ('Listable', 'Protected',)
+    attributes = ('Protected',)
 
     rules = {
         'Unique[x_Symbol]': 'Module[{x}, x]',
     }
 
-    def apply(self, vars, evaluation):
-        'Unique[vars___]'
+    def apply(self, evaluation):
+        'Unique[]'
 
-        from mathics.core.parser import is_symbol_name
-
-        vars = vars.get_sequence()
-        if len(vars) > 1:
-            return evaluation.message('Unique', 'argrx', Integer(len(vars)))
-
-        text = '$' if len(vars) == 0 else vars[0].get_string_value()
-        if text is None or not is_symbol_name(text):
-            return evaluation.message('Unique', 'usym', vars[0])
-
-        new_name = '%s%d' % (text, self.seq_number)
+        new_name = '$%d' % (self.seq_number)
         self.seq_number += 1
         return Symbol(new_name)
+
+    def apply_symbol(self, vars, attributes, evaluation):
+        'Unique[vars_, attributes___]'
+
+        from mathics.core.parser import is_symbol_name
+        from mathics.builtin.attributes import get_symbol_list
+
+        attributes = attributes.get_sequence()
+        if len(attributes) > 1:
+            return evaluation.message('Unique', 'argrx', Integer(len(attributes) + 1))
+
+        # Check valid symbol variables
+        symbols = vars.leaves if vars.has_form('List', None) else [vars]
+        for symbol in symbols:
+            if not isinstance(symbol, Symbol):
+                text = symbol.get_string_value()
+                if text is None or not is_symbol_name(text):
+                    return evaluation.message('Unique', 'usym', symbol)
+        # Check valid attributes
+        attrs = []
+        if len(attributes) > 0:
+            attrs = get_symbol_list(attributes[0], lambda item: evaluation.message('Unique', 'attnf', item))
+            if attrs is None:
+                return None
+        # Generate list new symbols
+        list = []
+        for symbol in symbols:
+            if isinstance(symbol, Symbol):
+                list.append(Module(Expression('List', symbol), symbol).evaluate(evaluation))
+            else:
+                new_name = '%s%d' % (symbol.get_string_value(), self.seq_number)
+                self.seq_number += 1
+                list.append(Symbol(new_name))
+
+        for symbol in list:
+            for att in attrs:
+                evaluation.definitions.set_attribute(symbol.get_name(), att)
+
+        if vars.has_form('List', None):
+            return Expression('List', *list)
+        else:
+            return list[0]
 
 
 class Context(Builtin):
