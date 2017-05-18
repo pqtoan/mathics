@@ -906,16 +906,6 @@ def convert_float_base(x, base, precision=10):
 
 class RealDigits(Builtin):
     """
-    <dl>
-        <dt>'RealDigits[$n$]'
-            <dd>returns the decimal representation of the real number $n$ as list of digits, together with the number of digits that are to the left of the decimal point.
-        <dt>'RealDigits[$n$, $b$]'
-            <dd>returns a list of base-$b$ representation of the real number $n$.
-        <dt>'RealDigits[$n$, $b$, $len$]'
-            <dd>returns a list of $len$ digits.
-        <dt>'RealDigits[$n$, $b$, $len$, $p$]'
-            <dd>return $len$ digits starting with the coefficient of $b$^$p$
-    </dl>
     
     Return the list of digits and exponent:
     >> RealDigits[123.55555]
