@@ -20,6 +20,7 @@ import hashlib
 import zlib
 import math
 import six
+import sys
 from six.moves import range
 from collections import namedtuple
 from contextlib import contextmanager
@@ -587,7 +588,7 @@ class Rationalize(Builtin):
         it = sympy.ntheory.continued_fraction_convergents(sympy.ntheory.continued_fraction_iterator(x))
         for i in it:
             p, q = i.as_numer_denom()
-            tol = c / q**2
+            tol = c / q ** 2
             if abs(i - x) <= tol:
                 return i
             if tol < machine_epsilon:
@@ -753,8 +754,7 @@ class IntegerDigits(Builtin):
     <dt>'IntegerDigits[$n$, $base$]'
         <dd>returns a list of the base-$base$ digits in $n$.
     <dt>'IntegerDigits[$n$, $base$, $length$]'
-        <dd>returns a list of length $length$, truncating or padding
-        with zeroes on the left as necessary.
+        <dd>returns a list of length $length$, truncating or padding with zeroes on the left as necessary.
     </dl>
 
     >> IntegerDigits[76543]
@@ -1187,7 +1187,7 @@ class RealDigits(Builtin):
                     
             if not isinstance(n, Integer):
                 if len(digits) > display_len:
-                    digits = digits[:display_len-1]    
+                    digits = digits[:display_len - 1]    
         else:
             # drop any leading zeroes
             for x in str(py_n):
