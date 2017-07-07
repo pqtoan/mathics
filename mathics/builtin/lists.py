@@ -284,6 +284,40 @@ def set_part(list, indices, new):
     rec(list, indices)
 
 
+def set_sequence_toan(list, indices):
+    "Replace a part to Sequence. indices must be a list of python integers. "
+
+    def sequence(cur, rest):
+        if len(rest) > 1:
+            pos = rest[0]
+            if cur.is_atom():
+                raise PartDepthError
+            try:
+                if pos > 0:
+                    part = cur.leaves[pos - 1]
+                elif pos == 0:
+                    part = cur.head
+                else:
+                    part = cur.leaves[pos]
+            except IndexError:
+                raise PartRangeError
+            sequence(part, rest[1:])
+        elif len(rest) == 1:
+            pos = rest[0]
+            if cur.is_atom():
+                raise PartDepthError
+            try:
+                if pos > 0:
+                    cur.leaves[pos - 1] = Expression('Sequence', *cur.leaves[pos - 1].get_leaves())
+                elif pos == 0:
+                    cur.head = Symbol('Sequence')
+                else:
+                    cur.leaves[pos] = Expression('Sequence', *cur.leaves[pos].get_leaves())
+            except IndexError:
+                raise PartRangeError
+
+    sequence(list, indices)
+
 def _parts_span_selector(pspec):
     if len(pspec.leaves) > 3:
         raise MessageException('Part', 'span', pspec)
@@ -659,7 +693,7 @@ def python_seq(start, stop, step, length):
     if (not 0 <= start < length or
         not 0 <= stop < length or
         step > 0 and start - stop > 1 or
-        step < 0 and stop - start > 1):     # nopep8
+        step < 0 and stop - start > 1):  # nopep8
         return None
 
     # include the stop value
@@ -1074,7 +1108,7 @@ class ReplacePart(Builtin):
         new_expr = expr.copy()
         replacements = replacements.get_sequence()
         for replacement in replacements:
-            if (not replacement.has_form('Rule', 2) and     # noqa
+            if (not replacement.has_form('Rule', 2) and  # noqa
                 not replacement.has_form('RuleDelayed', 2)):
                 evaluation.message('ReplacePart', 'reps',
                                    Expression('List', *replacements))
@@ -1106,6 +1140,175 @@ class ReplacePart(Builtin):
         return new_expr
 
 
+def _drop_take_selector(name, seq, sliced):
+    seq_tuple = convert_seq(seq)
+    if seq_tuple is None:
+        raise MessageException(name, 'seqs', seq)
+
+    def select(inner):
+        start, stop, step = seq_tuple
+        if inner.is_atom():
+            py_slice = None
+        else:
+            py_slice = python_seq(start, stop, step, len(inner.leaves))
+        if py_slice is None:
+            if stop is None:
+                stop = Symbol('Infinity')
+            raise MessageException(name, name.lower(), start, stop, inner)
+        return sliced(inner.leaves, py_slice)
+
+    return select
+
+
+def _take_span_selector(seq):
+    return _drop_take_selector('Take', seq, lambda x, s: x[s])
+
+
+def _drop_span_selector(seq):
+    def sliced(x, s):
+        y = x[:]
+        del y[s]
+        return y
+
+    return _drop_take_selector('Drop', seq, sliced)
+
+
+class FirstPosition(Builtin):
+    """
+    <dl>
+    <dt>'FirstPosition[$expr$, $pattern$]'
+        <dd>gives the position of the first element in $expr$ that matches $pattern$, or Missing["NotFound"] if no such element is found.
+    <dt>'FirstPosition[$expr$, $pattern$, $default$]'
+        <dd>gives default if no element matching $pattern$ is found.
+    <dt>'FirstPosition[$expr$, $pattern$, $default$, $levelspec$]'
+        <dd>finds only objects that appear on levels specified by $levelspec$.
+    </dl>
+
+    >> FirstPosition[{a, b, a, a, b, c, b}, b]
+     = {2}
+     
+    >> FirstPosition[{{a, a, b}, {b, a, a}, {a, b, a}}, b]
+     = {1, 3}
+     
+    >> FirstPosition[{x, y, z}, b]
+     = Missing[NotFound]
+
+    Find the first position at which x^2 to appears:
+    >> FirstPosition[{1 + x^2, 5, x^4, a + (1 + x^2)^2}, x^2]
+     = {1, 2}
+    
+    #> FirstPosition[{1, 2, 3}, _?StringQ, "NoStrings"]
+     = NoStrings 
+     
+    #> FirstPosition[a, a]
+     = {}
+     
+    #> FirstPosition[{{{1, 2}, {2, 3}, {3, 1}}, {{1, 2}, {2, 3}, {3, 1}}},3]
+     = {1, 2, 2} 
+    
+    #> FirstPosition[{{1, {2, 1}}, {2, 3}, {3, 1}}, 2, Missing["NotFound"],2]
+     = {2, 1}
+     
+    #> FirstPosition[{{1, {2, 1}}, {2, 3}, {3, 1}}, 2, Missing["NotFound"],4]
+     = {1, 2, 1}
+     
+    #> FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing["NotFound"], {1}]
+     = Missing[NotFound]
+     
+    #> FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing["NotFound"], 0]
+     = Missing[NotFound]
+     
+    #> FirstPosition[{{1, 2}, {1, {2, 1}}, {2, 3}}, 2, Missing["NotFound"], {3}]
+     = {2, 2, 1}
+     
+    #> FirstPosition[{{1, 2}, {1, {2, 1}}, {2, 3}}, 2, Missing["NotFound"], 3]
+     = {1, 2}
+     
+    #> FirstPosition[{{1, 2}, {1, {2, 1}}, {2, 3}}, 2,  Missing["NotFound"], {}]
+     = {1, 2}
+     
+    #> FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing["NotFound"], {1, 2, 3}]
+     : Level specification {1, 2, 3} is not of the form n, {n}, or {m, n}.
+     = FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing[NotFound], {1, 2, 3}]
+     
+    #> FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing["NotFound"], a]
+     : Level specification a is not of the form n, {n}, or {m, n}.
+     = FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing[NotFound], a]
+     
+    #> FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing["NotFound"], {1, a}]
+     : Level specification {1, a} is not of the form n, {n}, or {m, n}.
+     = FirstPosition[{{1, 2}, {2, 3}, {3, 1}}, 3, Missing[NotFound], {1, a}]
+     
+    """
+
+    messages = {
+        'level': 'Level specification `1` is not of the form n, {n}, or {m, n}.',
+    }
+
+    def apply(self, expr, pattern, evaluation, default = None, minLevel = None, maxLevel = None):
+        'FirstPosition[expr_, pattern_]'
+
+        if expr == pattern:
+            return Expression("List")
+       
+        result  = [] 
+        def check_pattern(input_list, pat, result, beginLevel):
+            for i in range(0, len(input_list.leaves)) :
+                nested_level = beginLevel
+                result.append(i + 1)
+                if input_list.leaves[i] == pat:
+                    #found the pattern
+                    if(minLevel is None or nested_level >= minLevel):
+                        return True
+                    
+                else:
+                    if isinstance(input_list.leaves[i], Expression) and (maxLevel is None or maxLevel > nested_level): 
+                        nested_level = nested_level + 1
+                        if check_pattern(input_list.leaves[i], pat, result, nested_level):
+                            return True
+                        
+                result.pop()
+            return False          
+        
+        is_found = False  
+        if isinstance(expr, Expression) and (maxLevel is None or maxLevel > 0): 
+            is_found = check_pattern(expr, pattern, result, 1)
+        if is_found:
+            return Expression("List", *result)
+        else:
+            return Expression("Missing", "NotFound") if default is None else default
+        
+    def apply_default(self, expr, pattern, default, evaluation):
+        'FirstPosition[expr_, pattern_, default_]'
+        return self.apply(expr, pattern, evaluation, default = default)
+    
+    def apply_level(self, expr, pattern, default, level, evaluation):
+        'FirstPosition[expr_, pattern_, default_, level_]'
+        
+        def is_interger_list(expr_list):
+            return all(
+                isinstance(expr_list.leaves[i], Integer) for i in range(len(expr_list.leaves))
+            )
+        
+        if level.has_form("List", None):
+            len_list  = len(level.leaves)
+            if len_list > 2 or not is_interger_list(level):
+                return evaluation.message('FirstPosition', 'level', level)
+            elif len_list == 0:
+                min_Level = max_Level = None
+            elif len_list == 1:
+                min_Level = max_Level = level.leaves[0].get_int_value()
+            elif len_list == 2:
+                min_Level = level.leaves[0].get_int_value()
+                max_Level = level.leaves[1].get_int_value()
+        elif isinstance(level, Integer):
+            min_Level = 0
+            max_Level = level.get_int_value()
+        else:    
+            return evaluation.message('FirstPosition', 'level', level)
+               
+        return self.apply(expr, pattern, evaluation, default = default, minLevel = min_Level, maxLevel = max_Level)
+    
 def _drop_take_selector(name, seq, sliced):
     seq_tuple = convert_seq(seq)
     if seq_tuple is None:
